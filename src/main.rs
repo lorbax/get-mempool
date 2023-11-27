@@ -13,7 +13,7 @@ async fn main_result() -> Result<(), Error> {
     let rpc = Client::new(&url, auth)?;
 
     let mempool = rpc.get_raw_mempool()?;
-    let result = minimal_rpc::get_raw_mempool_(&url, &username, &password); 
+    let result = minimal_rpc::get_raw_mempool_(&url, &username, &password).await; 
     
     if mempool.is_empty() {
         println!("La mempool è vuota.");
@@ -22,9 +22,8 @@ async fn main_result() -> Result<(), Error> {
         for txid in mempool {
             println!("{}", txid);
         }
-    }
-    result.await;
-    println!("BBBBBBB");
+    };
+    println!("Transazioni richiesta manuale: {:?}", result.unwrap());
 
     Ok(())
 }
