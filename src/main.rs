@@ -1,52 +1,40 @@
-extern crate bitcoincore_rpc;
-
-mod lib;
-
-use lib::minimal_rpc;
-
-use bitcoincore_rpc::{Auth, Client, Error, RpcApi};
-use hex::decode;
+extern crate bitcoincore_rpc; 
+use bitcoincore_rpc::{Auth, Client, RpcApi}; 
 use bitcoin::Transaction;
-use bitcoin::consensus::encode::deserialize as consensus_decode;
 
+mod mempool;
 
-async fn main_result() -> Result<(), Error> {
+#[tokio::main]
+async fn main() {
     let url = "http://127.0.0.1:18332".to_string();
     let username = "username".to_string(); 
     let password = "password".to_string(); 
     let auth = Auth::UserPass(username.clone(), password.clone());
 
-    let rpc = Client::new(&url, auth)?;
+    let rpc = Client::new(&url, auth).unwrap();
 
-    let mempool = rpc.get_raw_mempool()?;
-    let result = minimal_rpc::get_raw_mempool_(&url, &username, &password).await; 
-    let result = result.unwrap();
-    let result_ = minimal_rpc::get_raw_mempool_modified(&url, &username, &password).await; 
-    let txid: &str = &result[0];
-    let transaction_hex = minimal_rpc::get_raw_transaction(&url, &username, &password, txid).await;
-    let transaction_bytes = decode(transaction_hex.unwrap()).expect("Decoding failed"); 
-    let transaction: Transaction = consensus_decode(&transaction_bytes).expect("Deserialization failed");
-    let txid: bitcoin::Txid = transaction.txid();
+    let mempool = rpc.get_raw_mempool().unwrap();
+    let result = mempool::minimal_rpc::get_raw_mempool(&url, &username, &password).await; 
+    //let result_ = mempool::minimal_rpc::get_raw_memgTol_modified(&url, &username, &password).await; 
     
     if mempool.is_empty() {
-        println!("La mempool è vuota.");
+        println!("Empty mempool");
     } else {
-        println!("Transazioni nella mempool:");
+        println!("Transactions in mempool:");
         for txid in mempool {
             println!("{}", txid);
         }
     };
-    println!("Transazioni richiesta manuale: {:?}", result);
-    println!("Transazioni richiesta manuale modificata: {:?}", result_.unwrap());
-    println!("Transazione specifica: {:?}", transaction);
-    println!("Transazione specifica: {:?}", txid); 
-
-    Ok(())
-}
-
-#[tokio::main]
-async fn main() {
-    if let Err(e) = main_result().await {
-        eprintln!("Errore: {:?}", e);
+    match result {
+        Ok(result_) => {
+            println!("Mempool with manual request: {:?}", result_);
+            let txid: &str = &result_[0];
+            let transaction: Transaction = mempool::minimal_rpc::get_raw_transaction(&url, &username, &password, txid).await.unwrap();
+            let txid: bitcoin::Txid = transaction.txid();
+            println!("First Transaction: {:?}", transaction);
+            println!("Id of first Transaction: {:?}", txid); 
+        },
+        Err(e) => println!("Error: {:?}", e),
     }
 }
+
