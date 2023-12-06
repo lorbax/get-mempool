@@ -5,80 +5,98 @@ use bitcoin::Transaction;
 use bitcoin::consensus::encode::deserialize as consensus_decode;
 use hex::decode;
 
-pub async fn get_raw_mempool(url: &str, username: &str, password: &str) -> Result<Vec<String>, RpcError> {
-    let response = send_json_rpc_request(
-        url,
-        username,
-        password,
-        "getrawmempool",
-        json!([]),
-    ).await;
-    match response {
-        Ok(result) => {
-            let response_: Vec<String> = serde_json::from_value(result.result).unwrap();
-            Ok(response_)
-        },
-        Err(error) => Err(RpcError::JsonRpcError(error)),
-    }
+#[derive(Clone, Debug)]
+pub struct RpcClient<'a> {
+    client: reqwest::Client,
+    url: &'a str,
+    auth: Auth
 }
 
-pub async fn get_raw_transaction(url: &str, username: &str, password: &str, txid: &str) -> Result<Transaction, RpcError> {
-    let response = send_json_rpc_request(
-        url,
-        username,
-        password,
-        "getrawtransaction",
-        json!([txid, false]),
-    ).await;
-    match response {
-        Ok(result) => {
-            let result: serde_json::Value = result.result;
-            let transaction_hex: String = serde_json::from_value(result).unwrap();
-            let transaction_bytes = decode(transaction_hex).expect("Decoding failed"); 
-            let transaction: Transaction = consensus_decode(&transaction_bytes).expect("Deserialization failed");
-            Ok(transaction)
-        },
-        Err(error) => Err(RpcError::JsonRpcError(error)),
+impl<'a> RpcClient<'a> {
+    pub fn new(url: &'a str, auth: Auth) -> RpcClient<'a> {
+        let client = reqwest::Client::new();
+        RpcClient { client, url, auth }
     }
-}
 
-async fn send_json_rpc_request<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
-    url: &str, 
-    username: &str,
-    password: &str,
-    method: &str, 
-    params: serde_json::Value,
-) -> Result<JsonRpcResult<T>, JsonRpcError> {
-    let client = reqwest::Client::new();
-    let request = JsonRpcRequest {
-        jsonrpc: "2.0".to_string(),
-        method: method.to_string(),
-        params,
-        id: 1,
-    };
-
-    let response = client.post(url)
-        .basic_auth(username, Some(password))
-        .json(&request)
-        .send()
-        .await;
-    match response {
-        Ok(response_) => {
-            if response_.status().is_success() {
-                response_.json().await.map_err(|e| 
-                    JsonRpcError { code: -1, message: format!("Deserialization error {:?}", e)}
-                )
-            } else {
-                match response_.json().await {
-                    Ok(error_response) => Err(error_response),
-                    Err(e) => Err(
+    pub async fn send_json_rpc_request<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
+        &self,
+        method: &str, 
+        params: serde_json::Value,
+    ) -> Result<JsonRpcResult<T>, JsonRpcError> {
+        let client = self.client.clone();
+        let (username, password) = self.auth.clone().get_user_pass();
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: method.to_string(),
+            params,
+            id: 1,
+        };
+        let url = self.url;
+    
+        let response = client.post(url)
+            .basic_auth(&username, Some(&password))
+            .json(&request)
+            .send()
+            .await;
+        match response {
+            Ok(response_) => {
+                if response_.status().is_success() {
+                    response_.json().await.map_err(|e| 
                         JsonRpcError { code: -1, message: format!("Deserialization error {:?}", e)}
-                    ),
+                    )
+                } else {
+                    match response_.json().await {
+                        Ok(error_response) => Err(error_response),
+                        Err(e) => Err(
+                            JsonRpcError { code: -1, message: format!("Deserialization error {:?}", e)}
+                        ),
+                    }
                 }
-            }
-        },
-        Err(_) => todo!(),
+            },
+            Err(_) => todo!(),
+        }
     }
+    
+    pub async fn get_raw_transaction(&self, txid: &str) -> Result<Transaction, RpcError> {
+        let response = self.send_json_rpc_request("getrawtransaction", json!([txid, false]),
+        ).await;
+        match response {
+            Ok(result) => {
+                let result: serde_json::Value = result.result;
+                let transaction_hex: String = serde_json::from_value(result).unwrap();
+                let transaction_bytes = decode(transaction_hex).expect("Decoding failed"); 
+                let transaction: Transaction = consensus_decode(&transaction_bytes).expect("Deserialization failed");
+                Ok(transaction)
+            },
+            Err(error) => Err(RpcError::JsonRpcError(error)),
+        }
+    }
+
+    pub async fn get_raw_mempool(&self) -> Result<Vec<String>, RpcError> {
+        let response = self.send_json_rpc_request( "getrawmempool", json!([])).await;
+        match response {
+            Ok(result) => {
+                let response_: Vec<String> = serde_json::from_value(result.result).unwrap();
+                Ok(response_)
+            },
+            Err(error) => Err(RpcError::JsonRpcError(error)),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Auth {
+    username: String, 
+    password: String,
+}
+
+impl Auth {
+    pub fn get_user_pass(self) -> (String, String) {
+        (self.username, self.password)
+    }
+    pub fn new(username: String, password: String) -> Auth {
+        Auth {username, password}
+    }        
 }
 
 #[derive(Debug, Serialize)]
