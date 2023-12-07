@@ -9,11 +9,11 @@ use hex::decode;
 pub struct RpcClient<'a> {
     client: reqwest::Client,
     url: &'a str,
-    auth: Auth
+    auth: Auth<'a>
 }
 
 impl<'a> RpcClient<'a> {
-    pub fn new(url: &'a str, auth: Auth) -> RpcClient<'a> {
+    pub fn new(url: &'a str, auth: Auth<'a>) -> RpcClient<'a> {
         let client = reqwest::Client::new();
         RpcClient { client, url, auth }
     }
@@ -85,16 +85,16 @@ impl<'a> RpcClient<'a> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Auth {
-    username: String, 
-    password: String,
+pub struct Auth<'a> {
+    username: &'a str, 
+    password: &'a str,
 }
 
-impl Auth {
-    pub fn get_user_pass(self) -> (String, String) {
+impl<'a> Auth<'a> {
+    pub fn get_user_pass(self) -> (&'a str, &'a str) {
         (self.username, self.password)
     }
-    pub fn new(username: String, password: String) -> Auth {
+    pub fn new(username: &'a str, password: &'a str) -> Auth<'a> {
         Auth {username, password}
     }        
 }

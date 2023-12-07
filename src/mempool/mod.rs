@@ -24,7 +24,7 @@ pub struct TransactionWithHash {
 #[derive(Clone, Debug)]
 pub struct JDsMempool<'a> {
     pub mempool: Vec<TransactionWithHash>,
-    auth: Auth,
+    auth: Auth<'a>,
     url: &'a str,
 }
 
@@ -34,7 +34,7 @@ impl<'a> JDsMempool<'a> {
         RpcClient::new(url, self.auth.clone())
     }
 
-    pub fn new(url: &'a str, username: String, password: String) -> Self {
+    pub fn new(url: &'a str, username: &'a str, password: &'a str) -> Self {
         let auth = Auth::new(username, password);
         let empty_mempool: Vec<TransactionWithHash> = Vec::new();
         JDsMempool {
@@ -44,9 +44,9 @@ impl<'a> JDsMempool<'a> {
         }
     }
     
-    pub async fn update_mempool(mut self) -> Result<(), JdsMempoolError> {
+    pub async fn update_mempool(&mut self) -> Result<(), JdsMempoolError> {
         let mut mempool_ordered: Vec<TransactionWithHash> = Vec::new();
-        let client = JDsMempool::get_client(&self);
+        let client = JDsMempool::get_client(self);
         let new_mempool: Result<Vec<TransactionWithHash>, JdsMempoolError> =
         {
                 let mempool: Vec<String> = client.get_raw_mempool().await.unwrap();
