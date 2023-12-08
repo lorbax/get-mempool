@@ -18,6 +18,51 @@ impl<'a> RpcClient<'a> {
         RpcClient { client, url, auth }
     }
 
+    pub async fn get_raw_transaction(&self, txid: &str) -> Result<Transaction, RpcError> {
+        let response = self
+            .send_json_rpc_request("getrawtransaction", json!([txid, false]))
+            .await;
+        match response {
+            Ok(result) => {
+                let result: serde_json::Value = result.result;
+                let transaction_hex: String = match serde_json::from_value(result) {
+                    Ok(transaction) => transaction,
+                    Err(e) => return Err(RpcError::Deserialization(e.to_string())),
+                };
+                let transaction_bytes = decode(transaction_hex).expect("Decoding failed");
+                let transaction: Transaction =
+                    consensus_decode(&transaction_bytes).expect("Deserialization failed");
+                Ok(transaction)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub async fn get_raw_mempool(&self) -> Result<Vec<String>, RpcError> {
+        let response = self.send_json_rpc_request("getrawmempool", json!([])).await;
+        match response {
+            Ok(result) => {
+                let response_: Vec<String> = match serde_json::from_value(result.result) {
+                    Ok(response_inner) => response_inner,
+                    Err(e) => return Err(RpcError::Deserialization(e.to_string())),
+                };
+                Ok(response_)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub async fn submit_block(&self, block_hex: &str) -> Result<(), RpcError> {
+        let response = self
+            .send_json_rpc_request::<serde_json::Value>("submitblock", json!([block_hex]))
+            .await;
+
+        match response {
+            Ok(_) => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
     async fn send_json_rpc_request<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
         &self,
         method: &str,
@@ -61,40 +106,6 @@ impl<'a> RpcClient<'a> {
                 }
             }
             Err(e) => Err(RpcError::Http(e.to_string())),
-        }
-    }
-
-    pub async fn get_raw_transaction(&self, txid: &str) -> Result<Transaction, RpcError> {
-        let response = self
-            .send_json_rpc_request("getrawtransaction", json!([txid, false]))
-            .await;
-        match response {
-            Ok(result) => {
-                let result: serde_json::Value = result.result;
-                let transaction_hex: String = match serde_json::from_value(result) {
-                    Ok(transaction) => transaction,
-                    Err(e) => return Err(RpcError::Deserialization(e.to_string())),
-                };
-                let transaction_bytes = decode(transaction_hex).expect("Decoding failed");
-                let transaction: Transaction =
-                    consensus_decode(&transaction_bytes).expect("Deserialization failed");
-                Ok(transaction)
-            }
-            Err(error) => Err(error),
-        }
-    }
-
-    pub async fn get_raw_mempool(&self) -> Result<Vec<String>, RpcError> {
-        let response = self.send_json_rpc_request("getrawmempool", json!([])).await;
-        match response {
-            Ok(result) => {
-                let response_: Vec<String> = match serde_json::from_value(result.result) {
-                    Ok(response_inner) => response_inner,
-                    Err(e) => return Err(RpcError::Deserialization(e.to_string())),
-                };
-                Ok(response_)
-            }
-            Err(error) => Err(error),
         }
     }
 }
