@@ -288,9 +288,11 @@ dependencies = [
 name = "get-mempool"
 version = "0.1.0"
 dependencies = [
+ "base64 0.21.5",
  "bitcoin 0.29.2",
  "bitcoincore-rpc",
  "hex",
+ "hyper",
  "reqwest",
  "serde",
  "serde_json",

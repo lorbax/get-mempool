@@ -13,4 +13,6 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc","r
 serde = { version = "1.0.89", features = ["derive", "alloc"], default-features = false }
 tokio = { version = "1.0", features = ["full"] }
 hex = "0.4.3"
+hyper = "0.14.27"
+base64 = "0.21.5"
 
