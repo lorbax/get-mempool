@@ -1,23 +1,29 @@
+// TODO
+//  - WHEN UPGRADING TO 1.0.1 Client is in hyper-utils:
+//    Struct hyper_util::client::legacy::Client
+//  - use https for security reasons
+use base64::Engine;
 use bitcoin::consensus::encode::deserialize as consensus_decode;
 use bitcoin::Transaction;
 use hex::decode;
-use reqwest;
+//use reqwest;
+use hyper::{Body, Client, Request};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use hyper::{Body, Client, Request, Response};
-use hyper::header::{AUTHORIZATION, CONTENT_TYPE};
+// use hyper::Response;
 use hyper::client::HttpConnector;
+use hyper::header::{AUTHORIZATION, CONTENT_TYPE};
 
 #[derive(Clone, Debug)]
 pub struct RpcClient<'a> {
-    client: reqwest::Client,
+    client: Client<HttpConnector>,
     url: &'a str,
     auth: Auth<'a>,
 }
 
 impl<'a> RpcClient<'a> {
     pub fn new(url: &'a str, auth: Auth<'a>) -> RpcClient<'a> {
-        let client = reqwest::Client::new();
+        let client = Client::<HttpConnector>::new();
         RpcClient { client, url, auth }
     }
 
@@ -71,7 +77,7 @@ impl<'a> RpcClient<'a> {
         method: &str,
         params: serde_json::Value,
     ) -> Result<JsonRpcResult<T>, RpcError> {
-        let client = Client::<HttpConnector>::new();
+        let client = &self.client;
         let (username, password) = self.auth.clone().get_user_pass();
         let request = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -79,35 +85,47 @@ impl<'a> RpcClient<'a> {
             params,
             id: 1,
         };
-        
+
         let request_body = match serde_json::to_string(&request) {
             Ok(body) => body,
             Err(e) => return Err(RpcError::Deserialization(e.to_string())),
-         };
+        };
 
         let req = Request::builder()
             .method("POST")
             .uri(self.url)
             .header(CONTENT_TYPE, "application/json")
-            .header(AUTHORIZATION, format!("Basic {}", base64::encode(format!("{}:{}", username, password))))
+            .header(
+                AUTHORIZATION,
+                format!(
+                    "Basic {}",
+                    base64::engine::general_purpose::STANDARD
+                        .encode(format!("{}:{}", username, password))
+                ),
+            )
             .body(Body::from(request_body))
-            .unwrap();
+            .map_err(|e| RpcError::Http(e.to_string()))?;
+        dbg!(&req);
 
-        let response = client.request(req).await.map_err(|e| RpcError::Http(e.to_string()))?;
+        let response = client
+            .request(req)
+            .await
+            .map_err(|e| RpcError::Http(e.to_string()))?;
 
         let status = response.status();
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.map_err(|e| RpcError::Http(e.to_string()))?;
-        let body = String::from_utf8(body_bytes.to_vec()).map_err(|e| RpcError::Deserialization(e.to_string()))?;
+        let body = hyper::body::to_bytes(response.into_body())
+            .await
+            .map_err(|e| RpcError::Http(e.to_string()))?;
 
         if status.is_success() {
-            serde_json::from_str(&body).map_err(|e| {
+            serde_json::from_slice(&body).map_err(|e| {
                 RpcError::JsonRpc(JsonRpcError {
                     code: -1,
                     message: format!("Deserialization error {:?}", e),
                 })
             })
         } else {
-            match serde_json::from_str(&body) {
+            match serde_json::from_slice(&body) {
                 Ok(error_response) => Err(error_response),
                 Err(e) => Err(RpcError::JsonRpc(JsonRpcError {
                     code: -1,
@@ -117,51 +135,51 @@ impl<'a> RpcClient<'a> {
         }
     }
 
-    async fn send_json_rpc_request_<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
-        &self,
-        method: &str,
-        params: serde_json::Value,
-    ) -> Result<JsonRpcResult<T>, RpcError> {
-        let client = self.client.clone();
-        let (username, password) = self.auth.clone().get_user_pass();
-        let request = JsonRpcRequest {
-            jsonrpc: "2.0".to_string(),
-            method: method.to_string(),
-            params,
-            id: 1,
-        };
-        let url = self.url;
+    //async fn send_json_rpc_request_<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
+    //    &self,
+    //    method: &str,
+    //    params: serde_json::Value,
+    //) -> Result<JsonRpcResult<T>, RpcError> {
+    //    let client = reqwest::Client::new();
+    //    let (username, password) = self.auth.clone().get_user_pass();
+    //    let request = JsonRpcRequest {
+    //        jsonrpc: "2.0".to_string(),
+    //        method: method.to_string(),
+    //        params,
+    //        id: 1,
+    //    };
+    //    let url = self.url;
 
-        let response = client
-            .post(url)
-            .basic_auth(username, Some(password))
-            .json(&request)
-            .send()
-            .await;
-        match response {
-            Ok(response_) => {
-                if response_.status().is_success() {
-                    response_.json().await.map_err(|e| {
-                        JsonRpcError {
-                            code: -1,
-                            message: format!("Deserialization error {:?}", e),
-                        }
-                        .into()
-                    })
-                } else {
-                    match response_.json().await {
-                        Ok(error_response) => Err(error_response),
-                        Err(e) => Err(JsonRpcError {
-                            code: -1,
-                            message: format!("Deserialization error {:?}", e),
-                        }
-                        .into()),
-                    }
-                }
-            }
-            Err(e) => Err(RpcError::Http(e.to_string())),
-        }
-    }
+    //    let response = client
+    //        .post(url)
+    //        .basic_auth(username, Some(password))
+    //        .json(&request)
+    //        .send()
+    //        .await;
+    //    match response {
+    //        Ok(response_) => {
+    //            if response_.status().is_success() {
+    //                response_.json().await.map_err(|e| {
+    //                    JsonRpcError {
+    //                        code: -1,
+    //                        message: format!("Deserialization error {:?}", e),
+    //                    }
+    //                    .into()
+    //                })
+    //            } else {
+    //                match response_.json().await {
+    //                    Ok(error_response) => Err(error_response),
+    //                    Err(e) => Err(JsonRpcError {
+    //                        code: -1,
+    //                        message: format!("Deserialization error {:?}", e),
+    //                    }
+    //                    .into()),
+    //                }
+    //            }
+    //        }
+    //        Err(e) => Err(RpcError::Http(e.to_string())),
+    //    }
+    //}
 }
 
 #[derive(Clone, Debug)]
