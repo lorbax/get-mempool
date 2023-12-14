@@ -6,24 +6,31 @@ use base64::Engine;
 use bitcoin::consensus::encode::deserialize as consensus_decode;
 use bitcoin::Transaction;
 use hex::decode;
-//use reqwest;
-use hyper::{Body, Client, Request};
+use reqwest;
+//use hyper::{Body, Client, Request};
+use hyper::Request;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 // use hyper::Response;
-use hyper::client::HttpConnector;
+// use hyper::client::HttpConnector;
+use bytes::{Buf, Bytes};
+use http_body_util::{BodyExt, Full};
 use hyper::header::{AUTHORIZATION, CONTENT_TYPE};
+use hyper_util::rt::TokioIo;
+use tokio::net::TcpStream;
 
 #[derive(Clone, Debug)]
 pub struct RpcClient<'a> {
-    client: Client<HttpConnector>,
+    // this reqwest:: Client is never used
+    client: reqwest::Client,
     url: &'a str,
     auth: Auth<'a>,
 }
 
 impl<'a> RpcClient<'a> {
     pub fn new(url: &'a str, auth: Auth<'a>) -> RpcClient<'a> {
-        let client = Client::<HttpConnector>::new();
+        let client = reqwest::Client::new();
+        // let client = Client::<HttpConnector>::new();
         RpcClient { client, url, auth }
     }
 
@@ -77,7 +84,15 @@ impl<'a> RpcClient<'a> {
         method: &str,
         params: serde_json::Value,
     ) -> Result<JsonRpcResult<T>, RpcError> {
-        let client = &self.client;
+        // TODO manage unwrapping
+        let url = "http://127.0.0.1:18332".parse::<hyper::Uri>().unwrap();
+        let host = url.host().expect("uri has no host");
+        let port = url.port_u16().unwrap_or(18332);
+        let address = format!("{}:{}", host, port);
+        let stream = TcpStream::connect(address).await.unwrap();
+        dbg!(&stream);
+        let io = TokioIo::new(stream);
+        let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await.unwrap();
         let (username, password) = self.auth.clone().get_user_pass();
         let request = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -86,14 +101,14 @@ impl<'a> RpcClient<'a> {
             id: 1,
         };
 
-        let request_body = match serde_json::to_string(&request) {
-            Ok(body) => body,
+        let request_body = match serde_json::to_vec(&request) {
+            Ok(body) => dbg!(body),
             Err(e) => return Err(RpcError::Deserialization(e.to_string())),
         };
 
         let req = Request::builder()
             .method("POST")
-            .uri(self.url)
+            .uri(url)
             .header(CONTENT_TYPE, "application/json")
             .header(
                 AUTHORIZATION,
@@ -103,19 +118,29 @@ impl<'a> RpcClient<'a> {
                         .encode(format!("{}:{}", username, password))
                 ),
             )
-            .body(Body::from(request_body))
+            .body(Full::new(Bytes::from(request_body)))
             .map_err(|e| RpcError::Http(e.to_string()))?;
         dbg!(&req);
 
-        let response = client
-            .request(req)
+        println!("A");
+        let response = sender
+            .send_request(req)
             .await
             .map_err(|e| RpcError::Http(e.to_string()))?;
 
+        println!("B");
         let status = response.status();
-        let body = hyper::body::to_bytes(response.into_body())
+        let body = response
+            .into_body()
+            .collect()
             .await
-            .map_err(|e| RpcError::Http(e.to_string()))?;
+            .map_err(|e| RpcError::Http(e.to_string()))?
+            .to_bytes();
+        //let frame = body.collect();
+        //let chunck = frame.
+        //let body = hyper::body::to_bytes(body)
+        //    .await
+        //    .map_err(|e| RpcError::Http(e.to_string()))?;
 
         if status.is_success() {
             serde_json::from_slice(&body).map_err(|e| {
