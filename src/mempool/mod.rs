@@ -43,6 +43,10 @@ impl<'a> JDsMempool<'a> {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.mempool.is_empty()
+    }
+
     pub async fn update_mempool(&mut self) -> Result<(), JdsMempoolError> {
         let mut mempool_ordered: Vec<TransactionWithHash> = Vec::new();
         let client = JDsMempool::get_client(self);

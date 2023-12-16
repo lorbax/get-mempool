@@ -2,6 +2,7 @@
 //  - WHEN UPGRADING TO 1.0.1 Client is in hyper-utils:
 //    Struct hyper_util::client::legacy::Client
 //  - use https for security reasons
+//  - manage id in RpcResult messages
 use base64::Engine;
 use bitcoin::consensus::encode::deserialize as consensus_decode;
 use bitcoin::Transaction;
@@ -33,8 +34,10 @@ impl<'a> RpcClient<'a> {
             .await;
         match response {
             Ok(result) => {
-                let result: serde_json::Value = result.result;
-                let transaction_hex: String = match serde_json::from_value(result) {
+                let result_inner: serde_json::Value = result
+                    .result
+                    .ok_or_else(|| RpcError::Other("Result not found".to_string()))?;
+                let transaction_hex: String = match serde_json::from_value(result_inner) {
                     Ok(transaction) => transaction,
                     Err(e) => return Err(RpcError::Deserialization(e.to_string())),
                 };
@@ -51,7 +54,10 @@ impl<'a> RpcClient<'a> {
         let response = self.send_json_rpc_request("getrawmempool", json!([])).await;
         match response {
             Ok(result) => {
-                let response_: Vec<String> = match serde_json::from_value(result.result) {
+                let result_inner = result
+                    .result
+                    .ok_or_else(|| RpcError::Other("Result not found".to_string()))?;
+                let response_: Vec<String> = match serde_json::from_value(result_inner) {
                     Ok(response_inner) => response_inner,
                     Err(e) => return Err(RpcError::Deserialization(e.to_string())),
                 };
@@ -83,7 +89,7 @@ impl<'a> RpcClient<'a> {
             jsonrpc: "2.0".to_string(),
             method: method.to_string(),
             params,
-            id: 1,
+            id: 1, //TODO manage message ids
         };
 
         let request_body = match serde_json::to_string(&request) {
@@ -105,7 +111,6 @@ impl<'a> RpcClient<'a> {
             )
             .body(Body::from(request_body))
             .map_err(|e| RpcError::Http(e.to_string()))?;
-        dbg!(&req);
 
         let response = client
             .request(req)
@@ -119,67 +124,28 @@ impl<'a> RpcClient<'a> {
 
         if status.is_success() {
             serde_json::from_slice(&body).map_err(|e| {
-                RpcError::JsonRpc(JsonRpcError {
-                    code: -1,
-                    message: format!("Deserialization error {:?}", e),
-                })
+                RpcError::JsonRpc(JsonRpcError::to_rpc_result(
+                    &JsonRpcError {
+                        code: -1,
+                        message: format!("Deserialization error {:?}", e),
+                    },
+                    1,
+                )) // TODO manage message ids
             })
         } else {
-            match serde_json::from_slice(&body) {
-                Ok(error_response) => Err(error_response),
-                Err(e) => Err(RpcError::JsonRpc(JsonRpcError {
-                    code: -1,
-                    message: format!("Deserialization error {:?}", e),
-                })),
+            let error_result: Result<JsonRpcResult<_>, _> = serde_json::from_slice(&body);
+            match error_result {
+                Ok(error_response) => Err(error_response.into()),
+                Err(e) => Err(RpcError::JsonRpc(JsonRpcError::to_rpc_result(
+                    &JsonRpcError {
+                        code: -1,
+                        message: format!("Deserialization error {:?}", e),
+                    },
+                    1,
+                ))), // TODO mane message ids
             }
         }
     }
-
-    //async fn send_json_rpc_request_<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
-    //    &self,
-    //    method: &str,
-    //    params: serde_json::Value,
-    //) -> Result<JsonRpcResult<T>, RpcError> {
-    //    let client = reqwest::Client::new();
-    //    let (username, password) = self.auth.clone().get_user_pass();
-    //    let request = JsonRpcRequest {
-    //        jsonrpc: "2.0".to_string(),
-    //        method: method.to_string(),
-    //        params,
-    //        id: 1,
-    //    };
-    //    let url = self.url;
-
-    //    let response = client
-    //        .post(url)
-    //        .basic_auth(username, Some(password))
-    //        .json(&request)
-    //        .send()
-    //        .await;
-    //    match response {
-    //        Ok(response_) => {
-    //            if response_.status().is_success() {
-    //                response_.json().await.map_err(|e| {
-    //                    JsonRpcError {
-    //                        code: -1,
-    //                        message: format!("Deserialization error {:?}", e),
-    //                    }
-    //                    .into()
-    //                })
-    //            } else {
-    //                match response_.json().await {
-    //                    Ok(error_response) => Err(error_response),
-    //                    Err(e) => Err(JsonRpcError {
-    //                        code: -1,
-    //                        message: format!("Deserialization error {:?}", e),
-    //                    }
-    //                    .into()),
-    //                }
-    //            }
-    //        }
-    //        Err(e) => Err(RpcError::Http(e.to_string())),
-    //    }
-    //}
 }
 
 #[derive(Clone, Debug)]
@@ -206,26 +172,38 @@ struct JsonRpcRequest {
 }
 
 #[derive(Debug, Deserialize)]
-struct JsonRpcResult<T> {
-    result: T,
+pub struct JsonRpcResult<T> {
+    result: Option<T>,
+    error: Option<JsonRpcError>,
     id: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct JsonRpcError {
     code: i32,
     message: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub enum RpcError {
-    JsonRpc(JsonRpcError),
-    Deserialization(String),
-    Http(String),
+impl JsonRpcError {
+    fn to_rpc_result(&self, id: u64) -> JsonRpcResult<JsonRpcError> {
+        JsonRpcResult {
+            result: None,
+            error: Some(self.clone()),
+            id,
+        }
+    }
 }
 
-impl From<JsonRpcError> for RpcError {
-    fn from(error: JsonRpcError) -> Self {
+#[derive(Debug, Deserialize)]
+pub enum RpcError {
+    JsonRpc(JsonRpcResult<JsonRpcError>),
+    Deserialization(String),
+    Http(String),
+    Other(String),
+}
+
+impl From<JsonRpcResult<JsonRpcError>> for RpcError {
+    fn from(error: JsonRpcResult<JsonRpcError>) -> Self {
         Self::JsonRpc(error)
     }
 }
