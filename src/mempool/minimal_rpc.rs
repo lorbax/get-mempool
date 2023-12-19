@@ -15,23 +15,38 @@ use serde_json::json;
 use hyper::client::HttpConnector;
 use hyper::header::{AUTHORIZATION, CONTENT_TYPE};
 
+use super::BlockHash;
+
 #[derive(Clone, Debug)]
-pub struct RpcClient<'a> {
+pub struct MiniRpcClient {
     client: Client<HttpConnector>,
-    url: &'a str,
-    auth: Auth<'a>,
+    //url: &'a str,
+    url: String,
+    auth: Auth,
 }
 
-impl<'a> RpcClient<'a> {
-    pub fn new(url: &'a str, auth: Auth<'a>) -> RpcClient<'a> {
+impl<'a> MiniRpcClient {
+    pub fn new(url: String, auth: Auth) -> MiniRpcClient {
         let client = Client::<HttpConnector>::new();
-        RpcClient { client, url, auth }
+        MiniRpcClient { client, url, auth }
     }
 
-    pub async fn get_raw_transaction(&self, txid: &str) -> Result<Transaction, RpcError> {
-        let response = self
-            .send_json_rpc_request("getrawtransaction", json!([txid, false]))
-            .await;
+    pub async fn get_raw_transaction(
+        &self,
+        txid: &String,
+        block_hash: Option<&BlockHash>,
+    ) -> Result<Transaction, RpcError> {
+        let response = match block_hash {
+            Some(hash) => self.send_json_rpc_request::<serde_json::Value>(
+                "getrawtransaction",
+                json!([txid, false, hash]),
+            ),
+            None => self.send_json_rpc_request::<serde_json::Value>(
+                "getrawtransaction",
+                json!([txid, false]),
+            ),
+        }
+        .await;
         match response {
             Ok(result) => {
                 let result_inner: serde_json::Value = result
@@ -97,9 +112,10 @@ impl<'a> RpcClient<'a> {
             Err(e) => return Err(RpcError::Deserialization(e.to_string())),
         };
 
+        //url: &'a str,
         let req = Request::builder()
             .method("POST")
-            .uri(self.url)
+            .uri(self.url.as_str())
             .header(CONTENT_TYPE, "application/json")
             .header(
                 AUTHORIZATION,
@@ -149,16 +165,16 @@ impl<'a> RpcClient<'a> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Auth<'a> {
-    username: &'a str,
-    password: &'a str,
+pub struct Auth {
+    username: String,
+    password: String,
 }
 
-impl<'a> Auth<'a> {
-    pub fn get_user_pass(self) -> (&'a str, &'a str) {
+impl Auth {
+    pub fn get_user_pass(self) -> (String, String) {
         (self.username, self.password)
     }
-    pub fn new(username: &'a str, password: &'a str) -> Auth<'a> {
+    pub fn new(username: String, password: String) -> Auth {
         Auth { username, password }
     }
 }
