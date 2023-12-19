@@ -13,7 +13,7 @@ async fn main() {
     let rpc = Client::new(url, auth).unwrap();
 
     let mempool = rpc.get_raw_mempool().unwrap();
-    let mut mempool_ = mempool::JDsMempool::new(url, &username, &password);
+    let mut mempool_ = mempool::JDsMempool::new(url.to_string(), username, password);
 
     println!("Now we pull the mempool using the bitcoinrpc crate");
     if mempool.is_empty() {

@@ -2,7 +2,7 @@ pub mod minimal_rpc;
 
 use bitcoin::Transaction;
 use bitcoin::Txid;
-use minimal_rpc::{Auth, RpcClient, RpcError};
+use minimal_rpc::{Auth, MiniRpcClient, RpcError};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -21,19 +21,19 @@ pub struct TransactionWithHash {
 }
 
 #[derive(Clone, Debug)]
-pub struct JDsMempool<'a> {
+pub struct JDsMempool {
     pub mempool: Vec<TransactionWithHash>,
-    auth: Auth<'a>,
-    url: &'a str,
+    auth: Auth,
+    url: String,
 }
 
-impl<'a> JDsMempool<'a> {
-    pub fn get_client(&self) -> RpcClient<'a> {
-        let url = self.url;
-        RpcClient::new(url, self.auth.clone())
+impl JDsMempool {
+    pub fn get_client(&self) -> MiniRpcClient {
+        let url = self.url.clone();
+        MiniRpcClient::new(url, self.auth.clone())
     }
 
-    pub fn new(url: &'a str, username: &'a str, password: &'a str) -> Self {
+    pub fn new(url: String, username: String, password: String ) -> Self {
         let auth = Auth::new(username, password);
         let empty_mempool: Vec<TransactionWithHash> = Vec::new();
         JDsMempool {
@@ -56,7 +56,7 @@ impl<'a> JDsMempool<'a> {
                 Err(e) => return Err(e.into()),
             };
             for id in &mempool {
-                let tx: Result<Transaction, _> = client.get_raw_transaction(id).await;
+                let tx: Result<Transaction, _> = client.get_raw_transaction(id, None).await;
                 if let Ok(tx) = tx {
                     let id = tx.txid();
                     mempool_ordered.push(TransactionWithHash { id, tx });
