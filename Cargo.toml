@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bitcoin = "0.29.1"
 serde_json = { version = "1.0", default-features = false, features = ["alloc","raw_value"] }
 serde = { version = "1.0.89", features = ["derive", "alloc"], default-features = false }
 tokio = { version = "1.0", features = ["full"] }
