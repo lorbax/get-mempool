@@ -16,5 +16,3 @@ hyper-util = { version = "0.1", features = ["full"] }
 base64 = "0.21.5"
 http-body-util = "0.1"
 bytes = "1"
-
-

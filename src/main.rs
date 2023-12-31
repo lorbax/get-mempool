@@ -1,5 +1,8 @@
 use base64::Engine;
+use bitcoin::consensus::encode::deserialize as consensus_decode;
+use bitcoin::Transaction;
 use bytes::Bytes;
+use hex::decode;
 use http_body_util::{BodyExt, Full};
 use hyper::header::{AUTHORIZATION, CONTENT_TYPE};
 use hyper::Request;
@@ -17,6 +20,17 @@ async fn main() {
                 serde_json::from_str(&result).unwrap();
             let result_inner = response_deserialized.result.unwrap();
             println!("Transactions: {:?}", result_inner);
+            let txid = &result_inner[0];
+            let response_tx_hex = send_json_rpc_request("getrawtransaction", json!([txid, false]))
+                .await
+                .unwrap();
+            let response_tx: JsonRpcResult<String> =
+                serde_json::from_str(&response_tx_hex).unwrap();
+            let transaction_hex = response_tx.result.unwrap();
+            let transaction_bytes = decode(transaction_hex).expect("Decoding failed");
+            let transaction: Transaction =
+                consensus_decode(&transaction_bytes).expect("Deserialization failed");
+            println!("First transaction: {:?}", transaction);
         }
         Err(error) => {
             println!("Error: {:?}", error);
