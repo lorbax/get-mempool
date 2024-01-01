@@ -13,8 +13,7 @@ async fn main() {
     let rpc = Client::new(url, auth).unwrap();
 
     let mempool = rpc.get_raw_mempool().unwrap();
-    let mut mempool_ = mempool::JDsMempool::new(url, &username, &password);
-    let _ = mempool_.update_mempool().await;
+    let mut mempool_ = mempool::JDsMempool::new(url.to_string(), username, password);
 
     println!("Now we pull the mempool using the bitcoinrpc crate");
     if mempool.is_empty() {
@@ -26,6 +25,11 @@ async fn main() {
         }
     };
     println!("The first transaction of the mempool used custom software. Compare this transaction with the first transaction obtained with bitcoinrpc crate");
-    let first_transaction = &mempool_.mempool[0];
-    println!("First transaction with hash: {:?}", first_transaction);
+    match mempool_.update_mempool().await {
+        Ok(_) => {
+            let first_transaction = &mempool_.mempool[0];
+            println!("First transaction with hash: {:?}", first_transaction);
+        }
+        Err(error) => println!("Error: {:?}", error),
+    };
 }
