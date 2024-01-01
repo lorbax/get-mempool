@@ -33,7 +33,7 @@ impl JDsMempool {
         MiniRpcClient::new(url, self.auth.clone())
     }
 
-    pub fn new(url: String, username: String, password: String ) -> Self {
+    pub fn new(url: String, username: String, password: String) -> Self {
         let auth = Auth::new(username, password);
         let empty_mempool: Vec<TransactionWithHash> = Vec::new();
         JDsMempool {
