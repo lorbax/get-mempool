@@ -20,17 +20,17 @@ use serde_json::json;
 use super::BlockHash;
 
 #[derive(Clone, Debug)]
-pub struct MiniRpcClient {
+pub struct RpcClient {
     client: Client<HttpConnector, Full<Bytes>>,
     //url: &'a str,
     url: String,
     auth: Auth,
 }
 
-impl MiniRpcClient {
-    pub fn new(url: String, auth: Auth) -> MiniRpcClient {
+impl RpcClient {
+    pub fn new(url: String, auth: Auth) -> RpcClient {
         let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
-        MiniRpcClient { client, url, auth }
+        RpcClient { client, url, auth }
     }
 
     pub async fn get_raw_transaction(
@@ -61,7 +61,7 @@ impl MiniRpcClient {
         }
     }
 
-    pub async fn get_raw_mempool(&self) -> Result<Vec<String>, RpcError> {
+    pub async fn get_raw_mempool_verbose(&self) -> Result<Vec<String>, RpcError> {
         let response = self.send_json_rpc_request("getrawmempool", json!([])).await;
         match response {
             Ok(result_hex) => {
@@ -185,16 +185,6 @@ pub struct JsonRpcResult<T> {
 pub struct JsonRpcError {
     code: i32,
     message: String,
-}
-
-impl JsonRpcError {
-    fn to_rpc_result(&self, id: u64) -> JsonRpcResult<JsonRpcError> {
-        JsonRpcResult {
-            result: None,
-            error: Some(self.clone()),
-            id,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
